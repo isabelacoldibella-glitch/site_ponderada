@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cosmic Drifter 🚀</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000010;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Orbitron', sans-serif;
+      overflow: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 50%, rgba(0,50,120,0.3) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 20%, rgba(80,0,120,0.3) 0%, transparent 60%),
+        #000010;
+      z-index: 0;
+    }
+    #game-container {
+      position: relative;
+      z-index: 1;
+      border: 2px solid rgba(0,255,200,0.4);
+      border-radius: 4px;
+      box-shadow: 0 0 40px rgba(0,255,200,0.2), 0 0 80px rgba(0,100,255,0.1);
+    }
+  </style>
+</head>
+<body>
+<div id="game-container"></div>
+<script>
+
+// ================================================================
+//  UTILITÁRIO: gera todas as texturas via canvas puro
+// ================================================================
+function criarTexturas(scene) {
+
+  // ---- ASTRONAUTA: spritesheet 4 frames (32x48 cada) ----
+  const FW = 32, FH = 48;
+  const astroCanvas = document.createElement('canvas');
+  astroCanvas.width  = FW * 4;
+  astroCanvas.height = FH;
+  const ac = astroCanvas.getContext('2d');
+
+  const legOffsets = [0, 5, 0, -5];
+  for (let f = 0; f < 4; f++) {
+    const ox = f * FW;
+    const lo = legOffsets[f];
+    // Mochila propulsora
+    ac.fillStyle = '#cc5500';
+    ac.fillRect(ox + 23, FH * 0.32, 5, 12);
+    // Chama
+    ac.fillStyle = 'rgba(255,180,0,0.9)';
+    ac.beginPath();
+    ac.moveTo(ox+23, FH*0.44); ac.lineTo(ox+28, FH*0.44); ac.lineTo(ox+25.5, FH*0.44+7);
+    ac.closePath(); ac.fill();
+    // Corpo (traje)
+    ac.fillStyle = '#b0ccee';
+    ac.fillRect(ox + 8, FH * 0.30, 15, 18);
+    // Detalhe peito
+    ac.fillStyle = '#ffcc00';
+    ac.fillRect(ox + 11, FH * 0.35, 5, 3);
+    // Capacete
+    ac.fillStyle = '#1a44bb';
+    ac.beginPath(); ac.arc(ox+16, FH*0.21, 11, 0, Math.PI*2); ac.fill();
+    // Visor
+    ac.fillStyle = 'rgba(0,220,255,0.9)';
+    ac.beginPath(); ac.arc(ox+16, FH*0.21, 7, 0, Math.PI*2); ac.fill();
+    // Reflexo visor
+    ac.fillStyle = 'rgba(255,255,255,0.65)';
+    ac.beginPath(); ac.arc(ox+13, FH*0.17, 3, 0, Math.PI*2); ac.fill();
+    // Perna esquerda
+    ac.fillStyle = '#5577aa';
+    ac.fillRect(ox+9,  FH*0.56, 6, 12+lo);
+    ac.fillRect(ox+17, FH*0.56, 6, 12-lo);
+    // Botas
+    ac.fillStyle = '#223355';
+    ac.fillRect(ox+8,  FH*0.56+12+lo, 8, 5);
+    ac.fillRect(ox+16, FH*0.56+12-lo, 8, 5);
+  }
+  // Registra como spritesheet com frameWidth/frameHeight
+  scene.textures.addSpriteSheet('astronaut', astroCanvas, { frameWidth: FW, frameHeight: FH });
+
+  // ---- PLATAFORMA 128x16 ----
+  const platCanvas = document.createElement('canvas');
+  platCanvas.width = 128; platCanvas.height = 16;
+  const pc = platCanvas.getContext('2d');
+  pc.fillStyle = '#0f2a55'; pc.fillRect(0,0,128,16);
+  pc.fillStyle = '#00ffcc'; pc.fillRect(0,0,128,2);
+  pc.strokeStyle = 'rgba(0,255,200,0.25)'; pc.lineWidth = 1;
+  for (let i = 0; i < 128; i += 16) { pc.beginPath(); pc.moveTo(i,0); pc.lineTo(i,16); pc.stroke(); }
+  scene.textures.addImage('platform', platCanvas);
+
+  // ---- ESTRELA 16x16 ----
+  const starCanvas = document.createElement('canvas');
+  starCanvas.width = 16; starCanvas.height = 16;
+  const sc = starCanvas.getContext('2d');
+  const sg = sc.createRadialGradient(8,8,1,8,8,8);
+  sg.addColorStop(0,'#fffde7'); sg.addColorStop(0.45,'#ffcc00'); sg.addColorStop(1,'rgba(255,160,0,0)');
+  sc.fillStyle = sg; sc.beginPath(); sc.arc(8,8,8,0,Math.PI*2); sc.fill();
+  sc.strokeStyle='rgba(255,255,255,0.8)'; sc.lineWidth=1.2;
+  sc.beginPath(); sc.moveTo(8,1); sc.lineTo(8,15); sc.stroke();
+  sc.beginPath(); sc.moveTo(1,8); sc.lineTo(15,8); sc.stroke();
+  scene.textures.addImage('star', starCanvas);
+
+  // ---- ASTEROIDE 20x20 ----
+  const bombCanvas = document.createElement('canvas');
+  bombCanvas.width = 20; bombCanvas.height = 20;
+  const bc = bombCanvas.getContext('2d');
+  bc.fillStyle = '#444'; bc.beginPath(); bc.arc(10,11,9,0,Math.PI*2); bc.fill();
+  bc.fillStyle = '#2a2a2a';
+  bc.beginPath(); bc.arc(6,8,3,0,Math.PI*2); bc.fill();
+  bc.beginPath(); bc.arc(14,13,2,0,Math.PI*2); bc.fill();
+  const bgg2 = bc.createRadialGradient(10,11,2,10,11,9);
+  bgg2.addColorStop(0,'rgba(255,120,0,0.5)'); bgg2.addColorStop(1,'rgba(200,40,0,0.15)');
+  bc.fillStyle = bgg2; bc.beginPath(); bc.arc(10,11,9,0,Math.PI*2); bc.fill();
+  scene.textures.addImage('bomb', bombCanvas);
+
+  // ---- PARTÍCULA 8x8 ----
+  const partCanvas = document.createElement('canvas');
+  partCanvas.width = 8; partCanvas.height = 8;
+  const ptc = partCanvas.getContext('2d');
+  const ptg = ptc.createRadialGradient(4,4,0,4,4,4);
+  ptg.addColorStop(0,'#ffffff'); ptg.addColorStop(0.3,'#ffcc00'); ptg.addColorStop(1,'rgba(255,60,0,0)');
+  ptc.fillStyle = ptg; ptc.beginPath(); ptc.arc(4,4,4,0,Math.PI*2); ptc.fill();
+  scene.textures.addImage('particle', partCanvas);
+
+  // ---- FUNDO 800x500 ----
+  const bgCanvas = document.createElement('canvas');
+  bgCanvas.width = 800; bgCanvas.height = 500;
+  const bgc = bgCanvas.getContext('2d');
+  const bgg = bgc.createLinearGradient(0,0,0,500);
+  bgg.addColorStop(0,'#000020'); bgg.addColorStop(0.5,'#050520'); bgg.addColorStop(1,'#0a0a30');
+  bgc.fillStyle = bgg; bgc.fillRect(0,0,800,500);
+  const n1 = bgc.createRadialGradient(600,150,10,600,150,200);
+  n1.addColorStop(0,'rgba(80,0,150,0.3)'); n1.addColorStop(1,'transparent');
+  bgc.fillStyle = n1; bgc.fillRect(0,0,800,500);
+  const n2 = bgc.createRadialGradient(150,300,10,150,300,150);
+  n2.addColorStop(0,'rgba(0,60,140,0.3)'); n2.addColorStop(1,'transparent');
+  bgc.fillStyle = n2; bgc.fillRect(0,0,800,500);
+  let seed = 42;
+  const rand = () => { seed = (seed*16807)%2147483647; return (seed-1)/2147483646; };
+  for (let i = 0; i < 220; i++) {
+    bgc.fillStyle = `rgba(255,255,255,${0.3+rand()*0.7})`;
+    bgc.beginPath(); bgc.arc(rand()*800, rand()*500, rand()*1.4+0.3, 0, Math.PI*2); bgc.fill();
+  }
+  const pg = bgc.createRadialGradient(700,80,5,700,80,50);
+  pg.addColorStop(0,'#aaddff'); pg.addColorStop(0.4,'#4466cc'); pg.addColorStop(1,'rgba(20,30,80,0)');
+  bgc.fillStyle = pg; bgc.beginPath(); bgc.arc(700,80,50,0,Math.PI*2); bgc.fill();
+  bgc.strokeStyle='rgba(150,200,255,0.45)'; bgc.lineWidth=4;
+  bgc.beginPath(); bgc.ellipse(700,80,78,18,-0.3,0,Math.PI*2); bgc.stroke();
+  scene.textures.addImage('background', bgCanvas);
+}
+
+
+// ================================================================
+//  CENA 1 — WELCOME
+// ================================================================
+class WelcomeScene extends Phaser.Scene {
+  constructor() { super({ key: 'WelcomeScene' }); }
+
+  preload() {
+    criarTexturas(this);
+  }
+
+  create() {
+    const W = this.scale.width, H = this.scale.height;
+    this.add.image(W/2, H/2, 'background');
+
+    // Título com pulso
+    const title = this.add.text(W/2, 105, 'COSMIC DRIFTER', {
+      fontFamily:'Orbitron, sans-serif', fontSize:'50px', fontStyle:'bold',
+      color:'#00ffcc', stroke:'#003355', strokeThickness:6,
+      shadow:{offsetX:0,offsetY:0,color:'#00ffcc',blur:28,fill:true}
+    }).setOrigin(0.5);
+    this.tweens.add({ targets:title, scaleX:1.03, scaleY:1.03, duration:1200, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
+
+    this.add.text(W/2, 162, '— A SPACE PLATFORMER —', {
+      fontFamily:'Share Tech Mono, monospace', fontSize:'14px',
+      color:'rgba(0,255,200,0.55)', letterSpacing:4
+    }).setOrigin(0.5);
+
+    // Astronauta flutuando (frame 0 do spritesheet)
+    const demoAstro = this.add.image(W/2, 265, 'astronaut').setScale(2.8);
+    this.tweens.add({ targets:demoAstro, y:255, duration:900, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
+
+    // Painel de controles
+    const panel = this.add.graphics();
+    panel.fillStyle(0x001133, 0.88); panel.lineStyle(1, 0x00ffcc, 0.45);
+    panel.fillRoundedRect(W/2-230, 308, 460, 112, 8);
+    panel.strokeRoundedRect(W/2-230, 308, 460, 112, 8);
+
+    this.add.text(W/2, 323, 'COMO JOGAR', {
+      fontFamily:'Orbitron, sans-serif', fontSize:'12px', color:'#00ffcc', letterSpacing:3
+    }).setOrigin(0.5);
+
+    // Lista de controles (array + for loop)
+    const controles = [
+      { tecla:'← →',        acao:'Mover o astronauta'    },
+      { tecla:'↑ / ESPAÇO', acao:'Pular (duplo salto!)'  },
+    ];
+    for (let i = 0; i < controles.length; i++) {
+      const y = 350 + i * 32;
+      this.add.text(W/2-95, y, controles[i].tecla, {
+        fontFamily:'Share Tech Mono, monospace', fontSize:'14px', color:'#ffcc00',
+        backgroundColor:'#001a44', padding:{x:8,y:3}
+      }).setOrigin(0.5);
+      this.add.text(W/2+25, y, controles[i].acao, {
+        fontFamily:'Share Tech Mono, monospace', fontSize:'13px', color:'#aaccff'
+      }).setOrigin(0, 0.5);
+    }
+
+    // Botão INICIAR — hover simples sem tween (evita travamento)
+    this._btn(W/2, 448, '▶  INICIAR MISSÃO', 0x00ffcc, 0x00ddaa, () => {
+      this.cameras.main.fadeOut(350, 0,0,0);
+      this.time.delayedCall(350, () => this.scene.start('GameScene'));
+    });
+
+    this.add.text(W/2, 494, 'Colete estrelas ★  •  Desvie de asteroides ☄', {
+      fontFamily:'Share Tech Mono, monospace', fontSize:'11px',
+      color:'rgba(150,200,255,0.65)'
+    }).setOrigin(0.5);
+
+    this.cameras.main.fadeIn(450, 0,0,0);
+  }
+
+  // Botão sem tween: só troca cor no hover
+  _btn(x, y, label, cor, corHover, cb) {
+    const BW=230, BH=42, R=21;
+    const bg = this.add.graphics();
+    const draw = (c) => { bg.clear(); bg.fillStyle(c,1); bg.fillRoundedRect(x-BW/2, y-BH/2, BW, BH, R); };
+    draw(cor);
+    this.add.text(x, y, label, {
+      fontFamily:'Orbitron, sans-serif', fontSize:'15px', fontStyle:'bold', color:'#001122'
+    }).setOrigin(0.5).setDepth(1);
+    const z = this.add.zone(x, y, BW, BH).setInteractive({ useHandCursor:true });
+    z.on('pointerover',  () => draw(corHover));
+    z.on('pointerout',   () => draw(cor));
+    z.on('pointerdown',  cb);
+  }
+
+  update() {}
+}
+
+
+// ================================================================
+//  CENA 2 — JOGO PRINCIPAL
+// ================================================================
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  create() {
+    const W = this.scale.width, H = this.scale.height;
+
+    // Estado do jogo
+    this.pontuacao    = 0;
+    this.vidas        = 3;
+    this.jogoAtivo    = true;
+    this.podeDuplo    = true;
+    this.invulneravel = false;
+
+    this.add.image(W/2, H/2, 'background');
+
+    // ---- Plataformas (lista + for-of) ----
+    this.plataformas = this.physics.add.staticGroup();
+    const dadosPlat = [
+      { x:400, y:488, s:10  },
+      { x:120, y:385, s:2.5 },
+      { x:310, y:305, s:2.2 },
+      { x:530, y:235, s:2.2 },
+      { x:690, y:345, s:2.5 },
+      { x:185, y:198, s:2   },
+      { x:430, y:142, s:1.8 },
+    ];
+    for (const d of dadosPlat) {
+      const p = this.plataformas.create(d.x, d.y, 'platform');
+      p.setScale(d.s, 1).refreshBody();
+      p.setTint(0x66ccff);
+    }
+
+    // ---- Personagem ----
+    this.player = this.physics.add.sprite(100, 420, 'astronaut', 0);
+    this.player.setScale(1.8);
+    this.player.setBounce(0.05);
+    this.player.setCollideWorldBounds(true);
+    this.player.setSize(20, 40);
+    this.player.setOffset(6, 6);
+
+    // ---- Animações: usando frames explícitos (funciona com spritesheet via addSpriteSheet) ----
+    if (!this.anims.exists('idle')) {
+      this.anims.create({
+        key: 'idle',
+        frames: [
+          { key:'astronaut', frame:0 },
+          { key:'astronaut', frame:2 }
+        ],
+        frameRate: 3,
+        repeat: -1
+      });
+    }
+    if (!this.anims.exists('run')) {
+      this.anims.create({
+        key: 'run',
+        frames: [
+          { key:'astronaut', frame:0 },
+          { key:'astronaut', frame:1 },
+          { key:'astronaut', frame:2 },
+          { key:'astronaut', frame:3 }
+        ],
+        frameRate: 10,
+        repeat: -1
+      });
+    }
+    if (!this.anims.exists('jump')) {
+      this.anims.create({
+        key: 'jump',
+        frames: [{ key:'astronaut', frame:1 }],
+        frameRate: 1,
+        repeat: -1
+      });
+    }
+    this.player.play('idle');
+
+    // ---- Estrelas coletáveis ----
+    this.estrelas = this.physics.add.group();
+    this._criarEstrelas();
+
+    // ---- Asteroides ----
+    this.asteroides = this.physics.add.group();
+    this._spawnAsteroide();
+
+    // ---- Colisores e overlaps ----
+    this.physics.add.collider(this.player, this.plataformas);
+    this.physics.add.collider(this.estrelas, this.plataformas);
+    this.physics.add.collider(this.asteroides, this.plataformas, (ast) => {
+      if (Math.abs(ast.body.velocity.x) < 40) {
+        ast.setVelocityX(Phaser.Math.Between(-170,170));
+      }
+    }, null, this);
+    this.physics.add.overlap(this.player, this.estrelas,   this._coletarEstrela, null, this);
+    this.physics.add.overlap(this.player, this.asteroides, this._danoAsteroide,  null, this);
+
+    // ---- Teclado ----
+    this.cursors  = this.input.keyboard.createCursorKeys();
+    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+    // ---- HUD ----
+    this._criarHUD();
+
+    // Dificuldade progressiva
+    this.time.addEvent({
+      delay: 18000, callback: this._spawnAsteroide,
+      callbackScope: this, loop: true
+    });
+
+    // Emitter de propulsão (partículas que saem dos pés)
+    this.emProp = this.add.particles(0, 0, 'particle', {
+      speed: { min:30, max:70 },
+      angle: { min:85, max:95 },
+      scale: { start:0.5, end:0 },
+      lifespan: 280,
+      frequency: 50,
+      tint: [0xff7700, 0xffcc00],
+      emitting: false
+    });
+
+    this.cameras.main.fadeIn(400, 0,0,0);
+  }
+
+  _criarEstrelas() {
+    // Lista com posições das estrelas
+    const pos = [
+      {x:100,y:360},{x:210,y:280},{x:330,y:280},{x:460,y:215},
+      {x:570,y:215},{x:650,y:325},{x:760,y:325},{x:165,y:175},
+      {x:415,y:118},{x:290,y:462},{x:590,y:462},{x:700,y:462}
+    ];
+    for (const p of pos) {
+      const e = this.estrelas.create(p.x, p.y, 'star');
+      e.setBounceY(Phaser.Math.FloatBetween(0.3,0.55));
+      // Efeito especial: rotação contínua
+      this.tweens.add({ targets:e, angle:360, duration:Phaser.Math.Between(2000,3800), repeat:-1, ease:'Linear' });
+      // Pulsação de brilho
+      this.tweens.add({ targets:e, alpha:0.45, duration:Phaser.Math.Between(500,1100), yoyo:true, repeat:-1 });
+    }
+  }
+
+  _spawnAsteroide() {
+    if (!this.jogoAtivo) return;
+    const x = Phaser.Math.Between(60, 740);
+    const a = this.asteroides.create(x, 10, 'bomb');
+    a.setBounce(1);
+    a.setCollideWorldBounds(true);
+    a.setVelocity(Phaser.Math.Between(-170,170), 220);
+    a.setAngularVelocity(Phaser.Math.Between(-130,130));
+  }
+
+  _coletarEstrela(player, estrela) {
+    estrela.disableBody(true, true);
+    this.pontuacao += 10;
+    this.txtScore.setText('SCORE: ' + this.pontuacao);
+    this.cameras.main.flash(100, 255,220,0, false);
+
+    this.add.particles(estrela.x, estrela.y, 'particle', {
+      speed:{min:50,max:140}, scale:{start:0.7,end:0},
+      lifespan:450, quantity:8, tint:[0xffcc00,0xffffff], emitting:false
+    }).explode(8);
+
+    // Condicional: bônus ao coletar todas as estrelas
+    if (this.estrelas.countActive(true) === 0) {
+      this._criarEstrelas();
+      this._spawnAsteroide();
+      this.pontuacao += 50;
+      this.txtScore.setText('SCORE: ' + this.pontuacao);
+      const bonus = this.add.text(this.scale.width/2, 200, '★ BÔNUS +50 ★', {
+        fontFamily:'Orbitron, sans-serif', fontSize:'26px',
+        color:'#ffcc00', stroke:'#000', strokeThickness:4
+      }).setOrigin(0.5).setDepth(10);
+      this.tweens.add({ targets:bonus, y:140, alpha:0, duration:1200, onComplete:()=>bonus.destroy() });
+    }
+  }
+
+  _danoAsteroide(player, asteroide) {
+    if (!this.jogoAtivo || this.invulneravel) return;
+    this.vidas--;
+    this._atualizarVidas();
+    this.cameras.main.shake(280, 0.013);
+    this.cameras.main.flash(180, 255,0,0, false);
+
+    // Invulnerabilidade temporária com efeito de piscar
+    this.invulneravel = true;
+    let tick = 0;
+    this.time.addEvent({ delay:100, repeat:14,
+      callback: () => { player.setAlpha(tick++ % 2 === 0 ? 0.2 : 1); }
+    });
+    this.time.delayedCall(1600, () => { this.invulneravel = false; player.setAlpha(1); });
+
+    // Empurra o asteroide
+    asteroide.setVelocityX((player.x - asteroide.x) > 0 ? -200 : 200);
+
+    // Condicional: verifica game over
+    if (this.vidas <= 0) {
+      this.jogoAtivo = false;
+      this.physics.pause();
+      player.setTint(0xff4444);
+      this.time.delayedCall(900, () => {
+        this.cameras.main.fadeOut(450,0,0,0);
+        this.time.delayedCall(450, () => this.scene.start('GameOverScene', { pontuacao: this.pontuacao }));
+      });
+    }
+  }
+
+  _criarHUD() {
+    const W = this.scale.width;
+    const hudBg = this.add.graphics().setDepth(5);
+    hudBg.fillStyle(0x000020, 0.78); hudBg.fillRect(0,0,W,36);
+    hudBg.lineStyle(1,0x00ffcc,0.35); hudBg.lineBetween(0,36,W,36);
+
+    this.txtScore = this.add.text(14, 10, 'SCORE: 0', {
+      fontFamily:'Orbitron, sans-serif', fontSize:'15px', color:'#00ffcc'
+    }).setDepth(6);
+
+    // Lista de ícones de vida (for loop)
+    this.iconeVidas = [];
+    for (let i = 0; i < 3; i++) {
+      const v = this.add.text(W-26-i*26, 10, '♥', {
+        fontFamily:'Arial', fontSize:'19px', color:'#ff4466'
+      }).setDepth(6);
+      this.iconeVidas.push(v);
+    }
+  }
+
+  _atualizarVidas() {
+    for (let i = 0; i < this.iconeVidas.length; i++) {
+      if (i >= this.vidas) this.iconeVidas[i].setColor('#222244');
+    }
+  }
+
+  update() {
+    if (!this.jogoAtivo) return;
+
+    const onGround = this.player.body.blocked.down;
+    if (onGround) this.podeDuplo = true;
+
+    // ---- Movimento horizontal ----
+    if (this.cursors.left.isDown) {
+      this.player.setVelocityX(-215);
+      this.player.setFlipX(true);
+      this.player.play(onGround ? 'run' : 'jump', true);
+      this.emProp.setPosition(this.player.x + 14, this.player.y + 10);
+      this.emProp.start();
+
+    } else if (this.cursors.right.isDown) {
+      this.player.setVelocityX(215);
+      this.player.setFlipX(false);
+      this.player.play(onGround ? 'run' : 'jump', true);
+      this.emProp.setPosition(this.player.x - 14, this.player.y + 10);
+      this.emProp.start();
+
+    } else {
+      this.player.setVelocityX(0);
+      this.player.play(onGround ? 'idle' : 'jump', true);
+      this.emProp.stop();
+    }
+
+    // ---- Pulo (seta cima ou espaço) ----
+    const pulou = Phaser.Input.Keyboard.JustDown(this.cursors.up)
+               || Phaser.Input.Keyboard.JustDown(this.spaceKey);
+
+    if (pulou) {
+      if (onGround) {
+        this.player.setVelocityY(-530);
+      } else if (this.podeDuplo) {
+        // Duplo salto com efeito especial
+        this.player.setVelocityY(-460);
+        this.podeDuplo = false;
+        this.cameras.main.flash(70, 0,180,255, false);
+        this.add.particles(this.player.x, this.player.y, 'particle', {
+          speed:{min:70,max:160}, angle:{min:220,max:320},
+          scale:{start:0.65,end:0}, lifespan:380, quantity:7,
+          tint:[0x00ccff,0xffffff], emitting:false
+        }).explode(7);
+      }
+    }
+  }
+}
+
+
+// ================================================================
+//  CENA 3 — GAME OVER
+// ================================================================
+class GameOverScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameOverScene' }); }
+  init(data) { this.pontuacaoFinal = data.pontuacao || 0; }
+
+  create() {
+    const W = this.scale.width, H = this.scale.height;
+    this.add.image(W/2, H/2, 'background').setAlpha(0.45);
+    const ov = this.add.graphics();
+    ov.fillStyle(0x000010, 0.72); ov.fillRect(0,0,W,H);
+
+    this.add.text(W/2, 125, 'MISSÃO\nFALHOU', {
+      fontFamily:'Orbitron, sans-serif', fontSize:'52px', fontStyle:'bold',
+      color:'#ff4455', stroke:'#330011', strokeThickness:5, align:'center',
+      shadow:{offsetX:0,offsetY:0,color:'#ff0033',blur:28,fill:true}
+    }).setOrigin(0.5);
+
+    this.add.text(W/2, 278, 'PONTUAÇÃO FINAL', {
+      fontFamily:'Share Tech Mono, monospace', fontSize:'14px',
+      color:'rgba(150,200,255,0.65)', letterSpacing:4
+    }).setOrigin(0.5);
+
+    const st = this.add.text(W/2, 322, `${this.pontuacaoFinal}`, {
+      fontFamily:'Orbitron, sans-serif', fontSize:'62px', fontStyle:'bold',
+      color:'#ffcc00', stroke:'#332200', strokeThickness:4
+    }).setOrigin(0.5);
+    this.tweens.add({ targets:st, scaleX:1.06, scaleY:1.06, duration:700, yoyo:true, repeat:-1, ease:'Sine.easeInOut' });
+
+    // Mensagem condicional
+    let msg = '';
+    if      (this.pontuacaoFinal >= 300) msg = '🏆 LENDÁRIO! Você domina o cosmos!';
+    else if (this.pontuacaoFinal >= 150) msg = '⭐ Ótima performance, cosmonauta!';
+    else if (this.pontuacaoFinal >= 50)  msg = '🚀 Continue treinando, recruta!';
+    else                                  msg = '☄️ Os asteroides venceram desta vez...';
+    this.add.text(W/2, 388, msg, {
+      fontFamily:'Share Tech Mono, monospace', fontSize:'14px', color:'#aaccff'
+    }).setOrigin(0.5);
+
+    this._btn(W/2-125, 452, '▶ JOGAR NOVAMENTE', 0x00ffcc, 0x00ddaa, () => {
+      this.cameras.main.fadeOut(300,0,0,0);
+      this.time.delayedCall(300, () => this.scene.start('GameScene'));
+    });
+    this._btn(W/2+125, 452, '⌂ MENU INICIAL', 0x4488ff, 0x3366cc, () => {
+      this.cameras.main.fadeOut(300,0,0,0);
+      this.time.delayedCall(300, () => this.scene.start('WelcomeScene'));
+    });
+
+    this.add.particles(W/2, H, 'particle', {
+      speed:{min:20,max:75}, angle:{min:252,max:288},
+      scale:{start:0.5,end:0}, lifespan:{min:2000,max:4000},
+      frequency:200, tint:[0xff4455,0xff8844,0xffcc00]
+    });
+
+    this.cameras.main.fadeIn(450,0,0,0);
+  }
+
+  _btn(x, y, label, cor, corHover, cb) {
+    const BW=218, BH=40, R=20;
+    const bg = this.add.graphics();
+    const draw = (c) => { bg.clear(); bg.fillStyle(c,1); bg.fillRoundedRect(x-BW/2,y-BH/2,BW,BH,R); };
+    draw(cor);
+    this.add.text(x, y, label, {
+      fontFamily:'Orbitron, sans-serif', fontSize:'13px', fontStyle:'bold', color:'#001122'
+    }).setOrigin(0.5).setDepth(1);
+    const z = this.add.zone(x, y, BW, BH).setInteractive({ useHandCursor:true });
+    z.on('pointerover',  () => draw(corHover));
+    z.on('pointerout',   () => draw(cor));
+    z.on('pointerdown',  cb);
+  }
+
+  update() {}
+}
+
+
+// ================================================================
+//  CONFIG PHASER
+// ================================================================
+const config = {
+  type: Phaser.AUTO,
+  width:  800,
+  height: 500,
+  parent: 'game-container',
+  backgroundColor: '#000020',
+  physics: {
+    default: 'arcade',
+    arcade: { gravity:{ y:580 }, debug:false }
+  },
+  scene: [WelcomeScene, GameScene, GameOverScene]
+};
+
+const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
